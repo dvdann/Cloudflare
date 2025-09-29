@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cloudflare Domain Management</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        textarea, input, select {
+            width: 100%;
+            margin-bottom: 20px;
+            padding: 10px;
+            font-size: 16px;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+        }
+        button {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #result {
+            margin-top: 20px;
+            background-color: #f9f9f9;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .result-item {
+            margin-bottom: 15px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #f1f1f1;
+        }
+        .status-success {
+            background-color: #d4edda;
+        }
+        .status-fail {
+            background-color: #f8d7da;
+        }
+        .status {
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Cloudflare Domain Management</h1>
+        
+        
+        <h3>Tambahkan Domain</h3>
+        <textarea id="domainList" placeholder="Masukan domain perbaris aja satu persatu"></textarea>
+        <button onclick="submitDomains()">Tambahkan Domain</button>
+
+        
+        <h3>Detail Domain (eg Zone ID, Nameserver, dll)</h3>
+        <input type="text" id="domainName" placeholder="Masukan Nama Domain (domain.com)" />
+        <button onclick="getZoneDetails()">Dapatkan informasi Domain</button>
+
+        
+        <h3>Tambah DNS Record</h3>
+        <input type="text" id="zoneIdDns" placeholder="Zone ID Domain" />
+        <select id="recordType">
+            <option value="A">A Record</option>
+            <option value="CNAME">CNAME Record</option>
+        </select>
+        <input type="text" id="recordName" placeholder="Record name (@/subdomain)" />
+        <input type="text" id="recordContent" placeholder="Record Isi Content (IP hosting atau nama domain)" />
+        <button onclick="submitDNSRecord()">Tambah DNS Record</button>
+
+        
+        <h3>Redirect Rule</h3>
+        <input type="text" id="zoneIdPageRule" placeholder="Masukan Zone ID" />
+        <input type="text" id="domainNamePageRule" placeholder="Masukan nama domain tanpa https" />
+        <input type="text" id="destinationUrl" placeholder="Masukan url redirect (https://tujuanredirect.com)" />
+        <button onclick="submitPageRule()">Redirect</button>
+
+        
+        <div id="result"></div>
+    </div>
+
+    <script>
+        
+        function getZoneDetails() {
+            var domainName = document.getElementById('domainName').value;
+            var resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = "Fetching Zone Details...";
+
+            fetch('/get_zone_details', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    domain_name: domainName
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    resultDiv.innerHTML = `<div class="result-item status-fail">Error: ${data.error}</div>`;
+                } else {
+                    const resultItem = document.createElement('div');
+                    resultItem.classList.add('result-item');
+                    resultItem.classList.add('status-success');
+                    resultItem.innerHTML = `
+                        <p class="status">Zone ID: ${data.zone_id}</p>
+                        <p><strong>Zone Name:</strong> ${data.zone_name}</p>
+                        <p><strong>Created On:</strong> ${data.created_on}</p>
+                        <p><strong>Updated On:</strong> ${data.updated_on}</p>
+                        <p><strong>Nameservers:</strong></p>
+                    `;
+                    if (data.nameservers && data.nameservers.length > 0) {
+                        data.nameservers.forEach(ns => {
+                            resultItem.innerHTML += `<p>${ns}</p>`;
+                        });
+                    }
+                    resultDiv.appendChild(resultItem);
+                }
+            })
+            .catch(error => {
+                resultDiv.innerHTML = `<div class="result-item status-fail">Error occurred: ${error.message}</div>`;
+            });
+        }
+
+        
+        function submitDomains() {
+            var domainList = document.getElementById('domainList').value;
+            var domains = domainList.split("\n").map(function(domain) { return domain.trim(); }).filter(function(domain) { return domain !== ''; });
+
+            var resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = "Processing domains...";
+
+            fetch('/add_domains', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ domains: domains })
+            })
+            .then(response => response.json())
+            .then(data => {
+                resultDiv.innerHTML = "<h3>Results:</h3>";
+                data.results.forEach(result => {
+                    const resultItem = document.createElement('div');
+                    resultItem.classList.add('result-item');
+                    if (result.status === "Success") {
+                        resultItem.classList.add('status-success');
+                        resultItem.innerHTML = `
+                            <p class="status">Success:</p>
+                            <p>${result.domain}: ${result.status}</p>
+                            <p><strong>Zone ID:</strong> ${result.zone_id}</p>
+                            <p><strong>Zone Name:</strong> ${result.zone_name}</p>
+                            <p><strong>Created On:</strong> ${result.created_on}</p>
+                            <p><strong>Updated On:</strong> ${result.updated_on}</p>
+                            <p><strong>Nameservers:</strong></p>
+                        `;
+                        if (result.nameservers && result.nameservers.length > 0) {
+                            result.nameservers.forEach(ns => {
+                                resultItem.innerHTML += `<p>${ns}</p>`;
+                            });
+                        }
+                    } else {
+                        resultItem.classList.add('status-fail');
+                        resultItem.innerHTML = `
+                            <p class="status">Failed:</p>
+                            <p>${result.domain}: ${result.status}</p>
+                            <p><strong>Message:</strong> ${result.message}</p>
+                        `;
+                    }
+                    resultDiv.appendChild(resultItem);
+                });
+            })
+            .catch(error => {
+                resultDiv.innerHTML = "Error occurred: " + error;
+            });
+        }
+
+        
+        function submitDNSRecord() {
+            var zoneId = document.getElementById('zoneIdDns').value;
+            var recordType = document.getElementById('recordType').value;
+            var recordName = document.getElementById('recordName').value;
+            var recordContent = document.getElementById('recordContent').value;
+
+            var resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = "Processing DNS record...";
+
+            fetch('/add_dns_record', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    zone_id: zoneId,
+                    record_type: recordType,
+                    name: recordName,
+                    content: recordContent
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                resultDiv.innerHTML += "<h3>DNS Record Result:</h3>";
+                resultDiv.innerHTML += `<p>Status: ${data.status} <br> Message: ${data.message}</p>`;
+            })
+            .catch(error => {
+                resultDiv.innerHTML = "Error occurred: " + error;
+            });
+        }
+
+        
+        function submitPageRule() {
+            var zoneId = document.getElementById('zoneIdPageRule').value;
+            var domainName = document.getElementById('domainNamePageRule').value;
+            var destinationUrl = document.getElementById('destinationUrl').value;
+
+            var resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = "Creating Page Rule...";
+
+            fetch('/add_page_rule', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    zone_id: zoneId,  
+                    domain_name: domainName,  
+                    destination_url: destinationUrl  
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                resultDiv.innerHTML = "<h3>Page Rule Result:</h3>";
+                resultDiv.innerHTML += `<p>Status: ${data.status} <br> Message: ${data.message}</p>`;
+            })
+            .catch(error => {
+                resultDiv.innerHTML = "Error occurred: " + error.message;
+            });
+        }
+    </script>
+</body>
+</html>
